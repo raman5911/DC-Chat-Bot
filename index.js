@@ -29,20 +29,31 @@ const model = genAI.getGenerativeModel({
 });
 
 const PERSONALITY = process.env.PERSONALITY;
-const fallbackReplies = JSON.parse(process.env.FALLBACK_REPLIES);
-const specialReplies = JSON.parse(process.env.SPECIAL_REPLIES);
+
+function safeJSONParse(value, fallback) {
+  try {
+    return JSON.parse(value);
+  } catch {
+    return fallback;
+  }
+}
+
+const fallbackReplies = JSON.parse(process.env.FALLBACK_REPLIES, ["Hmm 😅", "Samajh nahi aaya", "Phir se bol na"]);
+const specialReplies = JSON.parse(process.env.SPECIAL_REPLIES, {});
 
 function generateReply(userMessage) {
-  const text = userMessage.toLowerCase();
+  try {
+    const text = (userMessage || "").toLowerCase();
+    const specialWord = containsSpecialMention(text);
 
-  const specialWord = containsSpecialMention(text);
+    if (specialWord && specialReplies[specialWord]) {
+      return specialReplies[specialWord];
+    }
 
-  if (specialWord) {
-    return specialReplies[specialWord];
+    return randomFrom(fallbackReplies);
+  } catch (e) {
+    return "😅 Aaliya thoda busy hai abhi";
   }
-
-  const randomReply = randomFrom(fallbackReplies);
-  return randomReply;
 }
 
 function randomFrom(arr) {
@@ -50,7 +61,7 @@ function randomFrom(arr) {
 }
 
 function containsSpecialMention(text) {
-  const arr = JSON.parse(process.env.SPECIAL_MENTIONS);
+  const arr = safeJSONParse(process.env.SPECIAL_MENTIONS, []);
   const specialMentions = new Set(arr);
 
   const words = text.toLowerCase().split(/\s+/);
