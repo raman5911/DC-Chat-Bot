@@ -40,8 +40,25 @@ function safeJSONParse(value, fallback) {
 
 const fallbackReplies = JSON.parse(process.env.FALLBACK_REPLIES, ["Hmm 😅", "Samajh nahi aaya", "Phir se bol na"]);
 const specialReplies = JSON.parse(process.env.SPECIAL_REPLIES, {});
+const arr = safeJSONParse(process.env.SPECIAL_MENTIONS, []);
+const specialMentions = new Set(arr);
 
-function generateReply(userMessage) {
+function randomFrom(arr) {
+  return arr[Math.floor(Math.random() * arr.length)];
+}
+
+function containsSpecialMention(text) {
+  const words = text.toLowerCase().split(/\s+/);
+
+  for (const word of words) {
+    if (specialMentions.has(word)) {
+      return word; // return matched keyword
+    }
+  }
+  return null;
+}
+
+function generateFallbackReply(userMessage) {
   try {
     const text = (userMessage || "").toLowerCase();
     const specialWord = containsSpecialMention(text);
@@ -56,24 +73,6 @@ function generateReply(userMessage) {
   }
 }
 
-function randomFrom(arr) {
-  return arr[Math.floor(Math.random() * arr.length)];
-}
-
-function containsSpecialMention(text) {
-  const arr = safeJSONParse(process.env.SPECIAL_MENTIONS, []);
-  const specialMentions = new Set(arr);
-
-  const words = text.toLowerCase().split(/\s+/);
-
-  for (const word of words) {
-    if (specialMentions.has(word)) {
-      return word; // return matched keyword
-    }
-  }
-  return null;
-}
-
 console.log("Token:", process.env.DISCORD_TOKEN);
 
 client.once("ready", () => {
@@ -86,27 +85,41 @@ client.on("messageCreate", async (message) => {
   if (message.author.bot) return;
 
   // Only reply when mentioned
-  if (!message.mentions.has(client.user)) return;
+  const botId = client.user.id;
+  const mentionedUserIds = message.mentions.users.map(u => u.id);
+
+  // ONLY trigger on direct bot mention
+  if (!mentionedUserIds.includes(botId)) return;
 
   try {
     await message.channel.sendTyping();
 
     const userText = message.content.replace(`<@${client.user.id}>`, "").trim();
     input = userText;
+    const textLower = userText.toLowerCase();
+
+    // -------------------- PRIORITY: SPECIAL MENTIONS --------------------
+    const specialWord = containsSpecialMention(textLower);
+    if (specialWord && specialReplies[specialWord]) {
+      return message.reply(specialReplies[specialWord]);
+    }
 
     const result = await model.generateContent([PERSONALITY, userText]);
 
     let reply = result.response.text();
 
     // Basic human cleanup
-    reply = reply.replace(/as an ai.*?\./gi, "").slice(0, 400);
+    reply = reply
+    .replace(/as an ai.*?\./gi, "")
+    .replace(/as a language model.*?\./gi, "")
+    .slice(0, 400);
 
     message.reply(reply);
   } catch (err) {
     console.error(err);
     // Pick a random fallback message
 
-    const reply = generateReply(input);
+    const reply = generateFallbackReply(input);
 
     message.reply(reply);
   }
